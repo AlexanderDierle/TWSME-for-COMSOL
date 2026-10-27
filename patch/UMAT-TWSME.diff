@@ -1,0 +1,184 @@
+--- a/src/UMAT-TWSME.for
++++ b/src/UMAT-TWSME.for
+@@ -40,15 +40,15 @@
+ 
+ SUBROUTINE UMAT(STRESS,STATEV,DDSDDE,SSE,SPD,SCD,RPL,DDSDDT,DRPLDE,DRPLDT,STRAN,DSTRAN,TIME,DTIME,TEMP,DTEMP,PREDEF,DPRED,CMNAME,&
+                             & NDI,NSHR,NTENS,NSTATV,PROPS,NPROPS,COORDS,DROT,PNEWDT,CELENT,DFGRD0,DFGRD1,NOEL,NPT,LAYER,KSPT,JSTEP,KINC)
+-INCLUDE 'ABA_PARAM.INC'
++!INCLUDE 'ABA_PARAM.INC'
+ integer NTENS, NPROPS
+ CHARACTER*80 CMNAME
+ DIMENSION STRESS(NTENS),STATEV(NSTATV),DDSDDE(NTENS,NTENS),DDSDDT(NTENS),DRPLDE(NTENS),STRAN(NTENS),DSTRAN(NTENS),TIME(2),PREDEF(1),DPRED(1),&
+                  & PROPS(NPROPS),COORDS(3),DROT(3,3),DFGRD0(3,3),DFGRD1(3,3),JSTEP(4)				 
+-REAL*8  PARAM(35),VAR(70)
++REAL*8  PARAM(36),VAR(70),TnUpd
+ INTEGER NPARAM, NVAR
+ REAL*8 variable
+-NPARAM=35 							!  NUMBER OF INPUT MODEL PARAMETERS
++NPARAM=36 							!  NUMBER OF INPUT MODEL PARAMETERS
+ NVAR=70  								!  NUMBER OF USER DEFINED DEPENDENT VARIABLES 
+ 
+ CALL INITIALIZATION(STRAN,DSTRAN,TEMP,DTEMP,COORDS,DROT,NTENS,NDI,NSHR,NOEL,NPT,LAYER,KSPT,KINC,TIME,DTIME,JSTEP,PROPS,NPROPS,STATEV,NSTATV,DFGRD0,DFGRD1,PARAM,NPARAM,VAR,NVAR)
+@@ -56,8 +56,9 @@
+ CALL TRANS_CORRECTOR(STRAN,DSTRAN,TEMP,DTEMP,COORDS,DROT,NTENS,NDI,NSHR,NOEL,NPT,LAYER,KSPT,KINC,TIME,DTIME,JSTEP,PROPS,NPROPS,STATEV,NSTATV,PARAM,NPARAM,VAR,NVAR)
+ CALL STRESS_UPDATE(STRAN,DSTRAN,TEMP,DTEMP,COORDS,DROT,NTENS,NDI,NSHR,NOEL,NPT,LAYER,KSPT,KINC,TIME,DTIME,JSTEP,PROPS,NPROPS,STATEV,NSTATV,PARAM,NPARAM,VAR,NVAR,STRESS)
+ CALL JACOBIAN_MATRIX(STRAN,DSTRAN,TEMP,DTEMP,COORDS,DROT,NTENS,NDI,NSHR,NOEL,NPT,LAYER,KSPT,KINC,TIME,DTIME,JSTEP,PROPS,NPROPS,STATEV,NSTATV,PARAM,NPARAM,VAR,NVAR,STRESS,DDSDDE)
+-CALL Accumulated_zt(PARAM,NPARAM,VAR,NVAR)
+-CALL Backstress_Update(PARAM,NPARAM,VAR,NVAR)
++TnUpd=TEMP+DTEMP                                   ! current temperature for Accumulated_zt / Backstress_Update
++CALL Accumulated_zt(PARAM,NPARAM,VAR,NVAR,TnUpd)
++CALL Backstress_Update(PARAM,NPARAM,VAR,NVAR,TnUpd)
+ CALL SDV_UPDATE(PARAM,NPARAM,VAR,NVAR,STATEV,NSTATV)
+ RETURN
+ END SUBROUTINE
+@@ -430,6 +431,86 @@
+ 
+ END SUBROUTINE
+ 
++SUBROUTINE ROTSIG(S, R, SPRIME, LSTR, NDI, NSHR)
++  IMPLICIT NONE
++  INTEGER, INTENT(IN) :: LSTR, NDI, NSHR
++  REAL*8 , INTENT(IN) :: S(NDI+NSHR), R(3,3)
++  REAL*8 , INTENT(OUT):: SPRIME(NDI+NSHR)
++
++  REAL*8 :: T(3,3), Srot(3,3), Rt(3,3)
++  REAL*8 :: fin, fout
++  INTEGER :: i,j, key
++
++! Abaqus convention: INDEX1=1 stress-like, INDEX1=2 strain-like (engineering shear)
++  IF (LSTR .EQ. 2) THEN          
++     fin  = 0.5D0    ! engineering -> tensor
++     fout = 2.0D0    ! tensor -> engineering
++  ELSE
++     fin  = 1.0D0
++     fout = 1.0D0
++  END IF
++
++  ! Voigt -> Tensor
++  T = 0.0D0
++  key = 10*NDI + NSHR
++  SELECT CASE (key)
++  CASE (33)    ! 3D: [11,22,33,12,13,23]
++     T(1,1)=S(1); T(2,2)=S(2); T(3,3)=S(3)
++     T(1,2)=fin*S(4); T(2,1)=T(1,2)
++     T(1,3)=fin*S(5); T(3,1)=T(1,3)
++     T(2,3)=fin*S(6); T(3,2)=T(2,3)
++  CASE (31)    ! plane strain: [11,22,33,12]
++     T(1,1)=S(1); T(2,2)=S(2); T(3,3)=S(3)
++     T(1,2)=fin*S(4); T(2,1)=T(1,2)
++  CASE (21)    ! plane stress: [11,22,12]
++     T(1,1)=S(1); T(2,2)=S(2); T(3,3)=0.0D0
++     T(1,2)=fin*S(3); T(2,1)=T(1,2)
++  CASE DEFAULT ! Fallback
++     IF (NDI+NSHR>=1) T(1,1)=S(1)
++     IF (NDI+NSHR>=2) T(2,2)=S(2)
++     IF (NDI     >=3) T(3,3)=S(3)
++     IF (NDI+NSHR>=4) THEN; T(1,2)=fin*S(4); T(2,1)=T(1,2); END IF
++     IF (NDI+NSHR>=5) THEN; T(1,3)=fin*S(5); T(3,1)=T(1,3); END IF
++     IF (NDI+NSHR>=6) THEN; T(2,3)=fin*S(6); T(3,2)=T(2,3); END IF
++  END SELECT
++
++  ! Rotation: Srot = R * T * R^T
++  DO i=1,3
++    DO j=1,3
++      Rt(i,j) = R(j,i)   ! transpose
++    END DO
++  END DO
++  Srot = MATMUL( R, MATMUL(T, Rt) )
++
++  ! Null Ausgang
++  DO i=1,NDI+NSHR
++    SPRIME(i) = 0.0D0
++  END DO
++
++  ! Tensor -> Voigt
++  SELECT CASE (key)
++  CASE (33)    ! 3D
++     SPRIME(1)=Srot(1,1); SPRIME(2)=Srot(2,2); SPRIME(3)=Srot(3,3)
++     SPRIME(4)=fout*Srot(1,2)
++     SPRIME(5)=fout*Srot(1,3)
++     SPRIME(6)=fout*Srot(2,3)
++  CASE (31)    ! plane strain
++     SPRIME(1)=Srot(1,1); SPRIME(2)=Srot(2,2); SPRIME(3)=Srot(3,3)
++     SPRIME(4)=fout*Srot(1,2)
++  CASE (21)    ! plane stress
++     SPRIME(1)=Srot(1,1); SPRIME(2)=Srot(2,2)
++     SPRIME(3)=fout*Srot(1,2)
++  CASE DEFAULT
++     IF (NDI+NSHR>=1) SPRIME(1)=Srot(1,1)
++     IF (NDI+NSHR>=2) SPRIME(2)=Srot(2,2)
++     IF (NDI     >=3) SPRIME(3)=Srot(3,3)
++     IF (NDI+NSHR>=4) SPRIME(4)=fout*Srot(1,2)
++     IF (NDI+NSHR>=5) SPRIME(5)=fout*Srot(1,3)
++     IF (NDI+NSHR>=6) SPRIME(6)=fout*Srot(2,3)
++  END SELECT
++END SUBROUTINE ROTSIG
++
++
+ SUBROUTINE SDV_ASSIGN(x,xo,xd,xdo,dxd,dxdo,zt,zto,ztd,ztdo,flag_fwd,flag_rev,Transformation,et,eto,ep,epo,et_tr,Lamdat_r,backstress,rplc,bound_reached,NR_Convergence,too,STATEV,NSTATV)
+ implicit none
+ 
+@@ -1524,6 +1605,7 @@
+ real*8 lamdat_r1,lamdat_r2,lamdat_r3,lamdat_r4,lamdat_r5,lamdat_r6
+ 
+ 
++Tn=Tn1                                             ! Tn was used without being set
+ CALL PARAM_ASSIGNMENTS(PARAM,NPARAM,Sa,Sm,v,alpha,Ca,Cm,Ms,Mf,As,Af,Hmax,kt,n1,n2,n3,n4,a1,a2,a3,rdso,rduo,Dc,Yo,Eb,C1,C2,L1,too,x_Up_Bound,x_Low_Bound,Ratio,NLGEOM,ELASTIC,COUPLING,MODEL,kp) 
+ CALL VAR_ASSIGNMENTS(1,VAR,NVAR,x,xo,xd,xdo,dxd,dxdo,zt,zto,ztd,ztdo,flag_fwd,flag_rev,Transformation,et,eto,ep,epo,et_tr,lamdat_r,backstress,e,eo,RPLC,Bound_Reached,NR_Convergence,too)
+ 
+@@ -3832,6 +3914,7 @@
+ subroutine JACOBIAN_MATRIX(STRAN,DSTRAN,TEMP,DTEMP,COORDS,DROT,NTENS,NDI,NSHR,NOEL,NPT,LAYER,KSPT,KINC,TIME,DTIME,JSTEP,PROPS,NPROPS,STATEV,NSTATV,PARAM,NPARAM,VAR,NVAR,STRESS,ddsdde)
+ 
+ implicit real*8(t)
++REAL*8 TEMP,DTEMP                                  ! explicit declaration (was implicit default REAL)
+ 
+ !DEFINITION OF  INPUT MODEL PARAMETERS
+ REAL*8  Sa,Sm,v,alpha,Ca,Cm,Ms,Mf,As,Af,Hmax,kt,n1,n2,n3,n4,a1,a2,a3,rdso,rduo,Dc,Yo,Eb,C1,C2,L1,too,x_Up_Bound,x_Low_Bound,Ratio,kp
+@@ -5029,8 +5112,9 @@
+ 
+ end
+ 
+-subroutine  Accumulated_zt(PARAM,NPARAM,VAR,NVAR)
++subroutine  Accumulated_zt(PARAM,NPARAM,VAR,NVAR,Tn)
+ implicit real*8(t)
++REAL*8 Tn                                          ! current temperature (was used without being set)
+ 
+ 
+ !DEFINITION OF  INPUT MODEL PARAMETERS
+@@ -5093,6 +5177,7 @@
+    ep3=ep(3)
+    ep4=ep(4)
+    ep5=ep(5)
++   ep6=ep(6)
+    if(maxval(abs(ep))<=1.0e-10)then
+        ep1=1.0e-10_8
+     end if
+@@ -5179,9 +5264,10 @@
+ !
+  end
+ 
+- subroutine Backstress_Update(PARAM,NPARAM,VAR,NVAR)
++ subroutine Backstress_Update(PARAM,NPARAM,VAR,NVAR,Tn)
+  
+ implicit real*8 (t)
++REAL*8 Tn                                          ! current temperature (was used without being set)
+ 
+ !DEFINITION OF  INPUT MODEL PARAMETERS
+ REAL*8  Sa,Sm,v,alpha,Ca,Cm,Ms,Mf,As,Af,Hmax,kt,n1,n2,n3,n4,a1,a2,a3,rdso,rduo,Dc,Yo,Eb,C1,C2,L1,too,x_Up_Bound,x_Low_Bound,Ratio,kp
+@@ -5249,6 +5335,7 @@
+    ep3=ep(3)
+    ep4=ep(4)
+    ep5=ep(5)
++   ep6=ep(6)
+    if(maxval(abs(ep))<=1.0e-10)then
+        ep1=1.0e-10_8
+     end if
+@@ -6366,7 +6453,7 @@
+  
+       SUBROUTINE DISP(U,KSTEP,KINC,TIME,NODE,NOEL,JDOF,COORDS)
+  !
+-      INCLUDE 'ABA_PARAM.INC'
++ !     INCLUDE 'ABA_PARAM.INC'
+  !
+       DIMENSION U(3),TIME(2),COORDS(3)
+  !

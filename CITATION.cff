@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the paper below together with Xu et al. (2021) and Lucarini and Martinez-Paneda (2024)."
+title: "TWSME-for-COMSOL"
+type: software
+repository-code: "https://github.com/AlexanderDierle/TWSME-for-COMSOL"
+license: MIT
+authors:
+  - family-names: Dierle
+    given-names: Alexander
+    orcid: "https://orcid.org/0009-0009-0919-7990"
+    affiliation: "Offenburg University of Applied Sciences"
+  - family-names: Seifert
+    given-names: Thomas
+    orcid: "https://orcid.org/0000-0001-9993-7968"
+    affiliation: "Offenburg University of Applied Sciences"
+  - family-names: Wendt
+    given-names: Thomas M.
+    orcid: "https://orcid.org/0000-0002-4461-5520"
+    affiliation: "Offenburg University of Applied Sciences"
+preferred-citation:
+  type: article
+  title: "Electro-Thermo-Mechanical Finite Element Modeling of Shape Memory Composite Structures: Material Model, Training, and Actuation"
+  authors:
+    - family-names: Dierle
+      given-names: Alexander
+    - family-names: Seifert
+      given-names: Thomas
+    - family-names: Wendt
+      given-names: Thomas M.
+  journal: "Smart Materials and Structures"
+  status: submitted
