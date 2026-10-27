@@ -1,0 +1,5 @@
+*.c    text eol=crlf
+*.f90  text eol=crlf
+*.txt  text eol=crlf
+*.diff -text
+*.md   text
