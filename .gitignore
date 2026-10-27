@@ -1,0 +1,19 @@
+# Build output
+*.obj
+*.o
+*.dll
+*.lib
+*.exp
+*.pdb
+*.mod
+*.so
+build/*.txt
+
+# COMSOL
+*.mph.lock
+*.recovery
+
+# UMAT of Xu et al. is not redistributed (obtain from the authors)
+src/UMAT-TWSME.for
+src/build/
+*.ilk
